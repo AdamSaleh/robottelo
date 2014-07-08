@@ -14,17 +14,8 @@ For more information on factories, read about class :class:`Factory`. For
 examples of factory usage, see module :mod:`tests.foreman.api.test_model_v2`.
 
 """
-from fauxfactory import FauxFactory
 from robottelo import entities, orm
-import random
-
-
-def _string_field():
-    """Return a value suitable for a ``robottelo.orm.StringField``."""
-    return FauxFactory.generate_string(
-        'utf8',
-        FauxFactory.generate_integer(1, 1000)
-    )
+from robottelo.api import base
 
 
 def _is_required(field_type):
@@ -37,55 +28,11 @@ def _is_required(field_type):
     :rtype: bool
 
     """
+    if isinstance(field_type, orm.DefaultField):
+        return True
     if field_type.options.get('required', False):
         return True
     return False
-
-
-def _get_default_value(field_type):
-    """Return a value for a field of type ``field_type``.
-
-    This method is capable of accepting a wide variety of field types and
-    generating a value for fields of that type. For example, if an instance of
-    ``robottelo.orm.BooleanField`` is passed in, either ``True`` or ``False``
-    is returned.
-
-    The following ``robottelo.orm`` fields are supported:
-
-    * ``BooleanField``
-    * ``EmailField``
-    * ``FloatField``
-    * ``IntegerField``
-    * ``IPAddressField``
-    * ``MACAddressField``
-    * ``StringField``
-
-    :param robottelo.orm.Field field_type: A ``Field`` instance, or an instance
-        of one of its more specialized brethren.
-    :return: A value suitable for use in a field of type ``field_type``.
-    :raises TypeError: If no strategy exists for generating a value of type
-        ``field_type``.
-
-    """
-    if isinstance(field_type, orm.BooleanField):
-        return FauxFactory.generate_boolean()
-    elif isinstance(field_type, orm.EmailField):
-        return FauxFactory.generate_email()
-    elif isinstance(field_type, orm.FloatField):
-        return random.random() * 10000
-    elif isinstance(field_type, orm.IntegerField):
-        return FauxFactory.generate_integer()
-    elif isinstance(field_type, orm.IPAddressField):
-        return FauxFactory.generate_ipaddr()
-    elif isinstance(field_type, orm.MACAddressField):
-        return FauxFactory.generate_mac()
-    elif isinstance(field_type, orm.StringField):
-        return _string_field()
-    else:
-        raise TypeError(
-            'There is no default strategy for populating fields of type '
-            '{0}.'.format(field_type)
-        )
 
 
 class Factory(object):
@@ -171,6 +118,14 @@ class Factory(object):
     ``create`` method. However, this has not yet been implemented.
 
     """
+
+    factory_for = {}
+
+    @classmethod
+    def forEntity(cls, entity):
+        print entity
+        return cls.factory_for[entity.__name__]
+
     def __init__(self, entity=None, interface=None):
         """Record arguments for later use.
 
@@ -184,6 +139,7 @@ class Factory(object):
             the keys produced by ``attributes``and ``create`` are customized.
 
         """
+
         # Check for invalid arguments
         interfaces = (None, 'API', 'CLI')
         if interface not in interfaces:
@@ -288,7 +244,7 @@ class Factory(object):
                 name in self.field_values
             ):
                 continue
-            fields[name] = _get_default_value(type_)
+            fields[name] = type_.generate()
 
         # Use values from `self.field_values`, if appropriate.
         for name, value in self.field_values.items():
@@ -322,14 +278,63 @@ class Factory(object):
         :rtype: dict
 
         """
-        # FIXME: implement this method.
-        raise NotImplementedError
+        prepare_fields = self.entity.get_fields()
+        prepare_dict = self.attributes()
+        one_one = (
+            i
+            for i in prepare_fields
+            if isinstance(prepare_fields[i], orm.OneToOneField))
+        for one_to_one_entity_field in one_one:
+            factory = Factory.forEntity(prepare_fields[one_to_one_entity_field].model)
+            created = factory(interface="API").create()
+            del prepare_dict[one_to_one_entity_field]
+            if self.interface == "API":
+                uid = None
+                if one_to_one_entity_field in created:
+                    uid = created[one_to_one_entity_field]['id']
+                else:
+                    uid = created['id']
+                prepare_dict[one_to_one_entity_field+"_id"] = uid
+            else:
+                prepare_dict[one_to_one_entity_field] = created['id']
+
+        if self.interface == "API":
+            print prepare_dict
+            result = base.post(
+                path=self.entity.Meta.api_path,
+                json=prepare_dict
+            )
+            if result.ok:
+                return result.json()
+            else:
+                raise Exception("Couldn't create", result.json())
 
 
-class HostFactory(Factory):
+def forEntity(cls, entity):
+    Factory.factory_for[entity.__name__] = cls
+
+
+class LifecycleEnvironmentFactory(Factory):
     """Factory for a "Host" entity."""
     def __init__(self, interface=None):
-        super(HostFactory, self).__init__(entities.Host, interface=interface)
+        super(LifecycleEnvironmentFactory, self).__init__(entities.LifecycleEnvironments, interface=interface)
+
+forEntity(LifecycleEnvironmentFactory, entities.LifecycleEnvironments)
+
+class EnvironmentFactory(Factory):
+    """Factory for a "Host" entity."""
+    def __init__(self, interface=None):
+        super(EnvironmentFactory, self).__init__(entities.Environments, interface=interface)
+
+forEntity(EnvironmentFactory, entities.Environments)
+
+class OrganizationFactory(Factory):
+    """Factory for a "Host" entity."""
+    def __init__(self, interface=None):
+        super(OrganizationFactory, self).__init__(entities.Organizations, interface=interface)
+
+forEntity(OrganizationFactory, entities.Organizations)
+
 
 
 class ModelFactory(Factory):

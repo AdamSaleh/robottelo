@@ -1,9 +1,11 @@
 """Module that define the model layer used to define entities"""
+from fauxfactory import FauxFactory
 import booby
 import booby.fields
 import booby.inspection
 import booby.validators
 import collections
+import random
 
 
 class Entity(booby.Model):
@@ -44,39 +46,77 @@ class Entity(booby.Model):
 class BooleanField(booby.fields.Boolean):
     """Field that represents a boolean"""
 
+    def generate(self):
+        return FauxFactory.generate_boolean()
+
 
 class EmailField(booby.fields.Email):
     """Field that represents a boolean"""
+
+    def generate(self):
+        return FauxFactory.generate_email()
 
 
 class Field(booby.fields.Field):
     """Base field class to implement other fields"""
 
+    def generate(self):
+        return FauxFactory.generate_boolean()
+
 
 class FloatField(booby.fields.Float):
     """Field that represents a float"""
+
+    def generate(self):
+        return random.random() * 10000
 
 
 class IntegerField(booby.fields.Integer):
     """Field that represents an integer"""
 
+    def generate(self):
+        return FauxFactory.generate_integer()
 
 class StringField(booby.fields.String):
     """Field that represents a string"""
 
+    def generate(self):
+        return FauxFactory.generate_string(
+            'alphanumeric',
+            FauxFactory.generate_integer(1, 10)
+        )
 
 # Additional fields
 class IPAddressField(StringField):
     """Field that represents an IP adrress"""
 
+    def generate(self):
+        return FauxFactory.generate_ipaddr()
 
 class MACAddressField(StringField):
     """Field that represents a MAC adrress"""
 
+    def generate(self):
+        return FauxFactory.generate_mac()
+
+class DefaultField(StringField):
+    """Field that represents a default value"""
+    def __init__(self, default, *args, **kwargs):
+        super(DefaultField, self).__init__(
+            *args,
+            **kwargs
+        )
+
+        self.default = default
+
+    def generate(self):
+        return self.default
 
 class OneToOneField(booby.fields.Embedded):
     """Field that represents a one to one related entity"""
 
+    def generate(self):
+        return None
 
 class OneToManyField(Field):
     """Field that represents a one to many related entity
@@ -145,6 +185,11 @@ class OneToManyField(Field):
 
         super(OneToManyField, self).__set__(instance, value)
 
+    def generate(self):
+        return None
 
 class URLField(StringField):
     """Field that represents an URL"""
+
+    def generate(self):
+        return None
